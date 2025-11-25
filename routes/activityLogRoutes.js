@@ -1,0 +1,9 @@
+const express = require('express');
+const router = express.Router();
+const { getActivityLogs } = require('../controllers/activityLogController');
+const { protect, admin } = require('../middlewares/authMiddleware');
+
+router.get('/', protect, admin, getActivityLogs);
+
+module.exports = router;
+
