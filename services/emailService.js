@@ -234,6 +234,37 @@ const sendPrescriptionEmail = async (prescription, patientEmail, patientName) =>
   }
 };
 
+// @desc    Send password reset OTP email
+const sendPasswordResetOTP = async (user, otp) => {
+  try {
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: user.email,
+      subject: 'Password Reset OTP - Health App',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #4CAF50;">Password Reset Request</h2>
+          <p>Dear ${user.name},</p>
+          <p>You have requested to reset your password. Please use the following OTP (One-Time Password) to verify your identity:</p>
+          <div style="background-color: #f5f5f5; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+            <h1 style="color: #4CAF50; font-size: 32px; letter-spacing: 5px; margin: 0;">${otp}</h1>
+          </div>
+          <p><strong>This OTP will expire in 10 minutes.</strong></p>
+          <p>If you did not request this password reset, please ignore this email or contact our support team.</p>
+          <p>For security reasons, never share this OTP with anyone.</p>
+          <p>Best regards,<br>Health App Team</p>
+        </div>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('Password reset OTP email sent');
+  } catch (error) {
+    console.error('Error sending password reset OTP email:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendAppointmentConfirmation,
   sendDoctorNotification,
@@ -243,5 +274,6 @@ module.exports = {
   sendAppointmentCancellation,
   sendAppointmentRescheduled,
   sendPrescriptionEmail,
+  sendPasswordResetOTP,
 };
 

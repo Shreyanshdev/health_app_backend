@@ -5,7 +5,7 @@ const DoctorRegistrationRequest = require('../models/DoctorRegistrationRequest')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { sendDoctorApprovalEmail, sendDoctorRejectionEmail } = require('../services/emailService');
+const { sendDoctorApprovalEmail, sendDoctorRejectionEmail, sendPasswordResetOTP } = require('../services/emailService');
 
 // Helper function to generate access token
 const generateAccessToken = (user) => {
@@ -390,6 +390,164 @@ const rejectDoctor = async (req, res) => {
   }
 };
 
+// @desc    Forgot password - Send OTP
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+    
+    // Don't reveal if user exists or not (security best practice)
+    if (!user) {
+      // Return success even if user doesn't exist to prevent email enumeration
+      return res.json({ 
+        message: 'If an account with that email exists, an OTP has been sent.' 
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Set OTP expiry (10 minutes)
+    const otpExpiry = new Date();
+    otpExpiry.setMinutes(otpExpiry.getMinutes() + 10);
+
+    // Save OTP to user
+    user.resetPasswordOTP = otp;
+    user.resetPasswordOTPExpiry = otpExpiry;
+    await user.save();
+
+    // Send OTP via email
+    try {
+      await sendPasswordResetOTP(user, otp);
+    } catch (emailError) {
+      console.error('Error sending OTP email:', emailError);
+      // Clear OTP if email fails
+      user.resetPasswordOTP = null;
+      user.resetPasswordOTPExpiry = null;
+      await user.save();
+      return res.status(500).json({ message: 'Failed to send OTP. Please try again later.' });
+    }
+
+    res.json({ 
+      message: 'If an account with that email exists, an OTP has been sent.',
+      // In development, you might want to return OTP for testing
+      ...(process.env.NODE_ENV === 'development' && { otp })
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Verify OTP
+// @route   POST /api/auth/verify-otp
+// @access  Public
+const verifyOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if OTP exists and is not expired
+    if (!user.resetPasswordOTP || !user.resetPasswordOTPExpiry) {
+      return res.status(400).json({ message: 'No OTP found. Please request a new one.' });
+    }
+
+    if (new Date() > user.resetPasswordOTPExpiry) {
+      // Clear expired OTP
+      user.resetPasswordOTP = null;
+      user.resetPasswordOTPExpiry = null;
+      await user.save();
+      return res.status(400).json({ message: 'OTP has expired. Please request a new one.' });
+    }
+
+    // Verify OTP
+    if (user.resetPasswordOTP !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    // OTP verified successfully
+    // Don't clear OTP yet - will be cleared when password is reset
+    res.json({ 
+      message: 'OTP verified successfully',
+      verified: true
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Reset password
+// @route   POST /api/auth/reset-password
+// @access  Public
+const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: 'Email, OTP, and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Verify OTP
+    if (!user.resetPasswordOTP || !user.resetPasswordOTPExpiry) {
+      return res.status(400).json({ message: 'No OTP found. Please request a new one.' });
+    }
+
+    if (new Date() > user.resetPasswordOTPExpiry) {
+      // Clear expired OTP
+      user.resetPasswordOTP = null;
+      user.resetPasswordOTPExpiry = null;
+      await user.save();
+      return res.status(400).json({ message: 'OTP has expired. Please request a new one.' });
+    }
+
+    if (user.resetPasswordOTP !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password and clear OTP
+    user.password = hashedPassword;
+    user.resetPasswordOTP = null;
+    user.resetPasswordOTPExpiry = null;
+    await user.save();
+
+    res.json({ 
+      message: 'Password reset successfully. You can now login with your new password.' 
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -399,5 +557,8 @@ module.exports = {
   getPendingDoctors,
   approveDoctor,
   rejectDoctor,
+  forgotPassword,
+  verifyOTP,
+  resetPassword,
 };
 

@@ -9,6 +9,9 @@ const {
   getPendingDoctors,
   approveDoctor,
   rejectDoctor,
+  forgotPassword,
+  verifyOTP,
+  resetPassword,
 } = require('../controllers/authController');
 const { protect, admin } = require('../middlewares/authMiddleware');
 
@@ -16,6 +19,9 @@ router.post('/register', register);
 router.post('/login', login);
 router.post('/refresh', refreshToken);
 router.post('/logout', protect, logout);
+router.post('/forgot-password', forgotPassword);
+router.post('/verify-otp', verifyOTP);
+router.post('/reset-password', resetPassword);
 router.post('/create-admin', protect, admin, createAdmin);
 router.get('/pending-doctors', protect, admin, getPendingDoctors);
 router.post('/approve-doctor/:id', protect, admin, approveDoctor);
